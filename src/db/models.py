@@ -39,6 +39,7 @@ class User(Base):
 
     notes = relationship("Note", back_populates="user", cascade="all, delete-orphan")
     diseases = relationship("Disease", secondary=user_diseases, back_populates="users")
+    health_metrics = relationship("HealthMetric", back_populates="user", cascade="all, delete")
 
 
 class Disease(Base):
@@ -124,3 +125,26 @@ class AllUsersProfilesMain(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship
+
+class HealthMetric(Base):
+    __tablename__ = "health_metrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    name = Column(String, nullable=False)  # Название показателя (например, "Давление")
+    value = Column(String, nullable=False)  # Значение показателя (например, "120/80")
+
+    user = relationship("User", back_populates="health_metrics")
+
+
+class HealthMetricCreate(BaseModel):
+    name: str
+    value: str
+
+class HealthMetricResponse(HealthMetricCreate):
+    id: int
