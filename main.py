@@ -420,3 +420,33 @@ async def remove_disease(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+
+
+from src.db.models import HealthMetric
+from src.db.models  import HealthMetricCreate, HealthMetricResponse
+
+@app.post("/add_health_metric", response_model=HealthMetricResponse, tags=["Здоровье"])
+async def add_health_metric(
+    metric: HealthMetricCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Добавить новый показатель здоровья"""
+    new_metric = HealthMetric(user_id=current_user.id, name=metric.name, value=metric.value)
+    db.add(new_metric)
+    await db.commit()
+    await db.refresh(new_metric)
+    return new_metric
+
+@app.get("/health_metrics", response_model=list[HealthMetricResponse], tags=["Здоровье"])
+async def get_health_metrics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Получить все показатели здоровья пользователя"""
+    result = await db.execute(select(HealthMetric).filter(HealthMetric.user_id == current_user.id))
+    metrics = result.scalars().all()
+    return metrics
