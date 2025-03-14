@@ -138,7 +138,7 @@ class HealthMetric(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
     name = Column(String, nullable=False)  # Название показателя (например, "Давление")
     value = Column(String, nullable=False)  # Значение показателя (например, "120/80")
-
+    created = Column(DateTime, default=func.now())  # Явно указываем поле created
     user = relationship("User", back_populates="health_metrics")
 
 
@@ -146,5 +146,14 @@ class HealthMetricCreate(BaseModel):
     name: str
     value: str
 
-class HealthMetricResponse(HealthMetricCreate):
+from datetime import datetime
+
+class HealthMetricResponse(BaseModel):
     id: int
+    name: str
+    value: str
+    created: datetime  # Добавляем поле created
+
+    class Config:
+        from_attributes = True  # Ранее known as `orm_mode = True`
+
