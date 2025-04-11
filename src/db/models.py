@@ -1,7 +1,9 @@
 import enum
 from datetime import datetime
+from typing import Optional
+
 from sqlalchemy import (
-    DateTime, func, Integer, String, Text, ForeignKey, Table, Column, CheckConstraint
+    DateTime, func, Integer, String, Text, ForeignKey, Table, Column, CheckConstraint, Float
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from pydantic import BaseModel, EmailStr
@@ -25,7 +27,8 @@ disease_symptoms = Table(
     "disease_symptoms",
     Base.metadata,
     Column("disease_id", Integer, ForeignKey("diseases.id", ondelete="CASCADE"), primary_key=True),
-    Column("symptom_id", Integer, ForeignKey("symptoms.id", ondelete="CASCADE"), primary_key=True)
+    Column("symptom_id", Integer, ForeignKey("symptoms.id", ondelete="CASCADE"), primary_key=True),
+    Column("weight", Float, default=1.0, nullable=False)  # Вес симптома, по умолчанию 1.0
 )
 
 
@@ -36,6 +39,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     nickname = Column(String, unique=True, index=True, nullable=False)
+    age = Column(Integer, nullable=True)  # Возраст, может быть необязательным
 
     notes = relationship("Note", back_populates="user", cascade="all, delete-orphan")
     diseases = relationship("Disease", secondary=user_diseases, back_populates="users")
@@ -75,20 +79,21 @@ class Note(Base):
 
 # **Pydantic-модели**
 
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
     nickname: str
-
+    age: Optional[int] = None  # Возраст необязательный
 
 class UserResponse(BaseModel):
     id: int
     nickname: str
     email: EmailStr
+    age: Optional[int] = None
 
     class Config:
         from_attributes = True
-
 
 class DiseaseCreate(BaseModel):
     name: str

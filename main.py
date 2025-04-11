@@ -16,7 +16,7 @@ async def on_startup():
     sessionmanager.init_db()
 
 
-
+from src.utils.users import get_current_user
 # Для вебсокетов:
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(get_db_for_websockets)):
@@ -37,7 +37,7 @@ from src.utils.users import hash_password, verify_password, create_access_token,
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from passlib.context import CryptContext
-from src.db.models import User, UserCreate
+from src.db.models import User, UserCreate, disease_symptoms
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -61,17 +61,91 @@ async def create_user(db: AsyncSession, email: str, password: str, nickname: str
 
 from pydantic import EmailStr
 from src.db.models import UserLogin
+
+
 @app.post("/register", tags=['Пользователи'])
 async def register_user(user: UserCreate, session: AsyncSession = Depends(get_db)):
+    # Проверяем, существует ли пользователь с таким email
+    result = await session.execute(select(User).filter(User.email == user.email))
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Проверяем, существует ли пользователь с таким nickname
+    result = await session.execute(select(User).filter(User.nickname == user.nickname))
+    if result.scalars().first():
+        raise HTTPException(status_code=400, detail="Nickname already taken")
+
     # Хешируем пароль
     hashed_password = hash_password(user.password)
+
     # Создаем нового пользователя
-    db_user = User(email=user.email, password_hash=hashed_password, nickname=user.nickname)
+    db_user = User(
+        email=user.email,
+        password_hash=hashed_password,
+        nickname=user.nickname,
+        age=user.age  # Добавляем возраст
+    )
     session.add(db_user)
     await session.commit()
     await session.refresh(db_user)
-    return {"msg": "User created", "user": {"id": db_user.id, "email": db_user.email, "nickname": db_user.nickname}}
 
+    return {
+        "msg": "User created",
+        "user": {
+            "id": db_user.id,
+            "email": db_user.email,
+            "nickname": db_user.nickname,
+            "age": db_user.age
+        }
+    }
+
+
+from pydantic import BaseModel
+from typing import Optional
+
+
+class UserUpdate(BaseModel):
+    nickname: Optional[str] = None
+    age: Optional[int] = None
+
+
+from pydantic import BaseModel
+from typing import Optional
+
+
+@app.put("/user/update", tags=['Пользователи'])
+async def update_user(
+        user_data: UserUpdate,
+        db: AsyncSession = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    """Обновить данные пользователя"""
+    try:
+        if user_data.nickname:
+            # Проверяем уникальность никнейма
+            result = await db.execute(select(User).filter(User.nickname == user_data.nickname))
+            if result.scalars().first() and result.scalars().first().id != current_user.id:
+                raise HTTPException(status_code=400, detail="Nickname already taken")
+            current_user.nickname = user_data.nickname
+
+        if user_data.age is not None:
+            current_user.age = user_data.age
+
+        db.add(current_user)
+        await db.commit()
+        await db.refresh(current_user)
+
+        return {
+            "msg": "User updated",
+            "user": {
+                "id": current_user.id,
+                "email": current_user.email,
+                "nickname": current_user.nickname,
+                "age": current_user.age
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/login", tags=['Пользователи'])
 async def login_user(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).filter(User.email == user_data.email))
@@ -316,9 +390,45 @@ async def add_symptom(symptom_data: SymptomCreate, db: AsyncSession = Depends(ge
     return await create_symptom(db, symptom_data.name)
 
 @app.post("/disease/{disease_id}/add_symptom/{symptom_id}", tags=['Симптомы'])
-async def add_symptom_to_disease(disease_id: int, symptom_id: int, db: AsyncSession = Depends(get_db)):
-    """Привязать симптом к болезни"""
-    return await link_disease_symptom(db, disease_id, symptom_id)
+async def add_symptom_to_disease(
+    disease_id: int,
+    symptom_id: int,
+    weight: float = 1.0,  # Опционально, по умолчанию 1.0
+    db: AsyncSession = Depends(get_db)
+):
+    """Привязать симптом к болезни с указанием веса"""
+    try:
+        # Проверяем существование болезни и симптома
+        disease = await db.get(Disease, disease_id)
+        symptom = await db.get(Symptom, symptom_id)
+        if not disease or not symptom:
+            raise HTTPException(status_code=404, detail="Болезнь или симптом не найдены")
+
+        # Проверяем, нет ли уже такой связи
+        result = await db.execute(
+            select(disease_symptoms).filter_by(disease_id=disease_id, symptom_id=symptom_id)
+        )
+        if result.first():
+            raise HTTPException(status_code=400, detail="Симптом уже привязан к болезни")
+
+        # Добавляем связь с указанным весом
+        await db.execute(
+            disease_symptoms.insert().values(
+                disease_id=disease_id,
+                symptom_id=symptom_id,
+                weight=weight
+            )
+        )
+        await db.commit()
+
+        return {
+            "msg": "Симптом привязан к болезни",
+            "disease_id": disease_id,
+            "symptom_id": symptom_id,
+            "weight": weight
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/user/user_diseases", tags=['Болезни'])
@@ -348,38 +458,68 @@ from src.db.database import get_db
 from src.utils.users import  get_current_user
 
 
+from sqlalchemy.orm import selectinload
+
+from sqlalchemy.orm import selectinload
+
 @app.post("/predict_disease", tags=['Вспомогательные функции'])
 async def predict_disease(
     symptoms: list[str],
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user)
 ):
-    """Анализ симптомов и прогнозирование вероятных заболеваний"""
+    """Предсказание болезней с учетом симптомов (основной фактор), их весов и минимального влияния возраста"""
     try:
-        # Получаем список всех болезней из БД
-        result = await db.execute(select(Disease))
+        # Получаем пользователя для проверки возраста
+        user = await db.get(User, current_user.id)
+        if user.age is None:
+            raise HTTPException(status_code=400, detail="Возраст пользователя не указан")
+
+        # Получаем все болезни с их симптомами
+        result = await db.execute(
+            select(Disease).options(selectinload(Disease.symptoms))
+        )
         diseases = result.scalars().all()
 
         if not diseases:
-            raise HTTPException(status_code=404, detail="Болезни не найдены в базе данных")
+            raise HTTPException(status_code=404, detail="Болезни не найдены")
 
         disease_probabilities = []
 
         for disease in diseases:
-            disease_symptoms = disease.symptoms  # Предполагается, что это список симптомов болезни
+            # Сумма весов всех симптомов болезни
+            total_weight = sum(ds.weight for ds in disease.symptoms)
+            # Сумма весов совпадающих симптомов
+            matched_weight = sum(
+                ds.weight for ds in disease.symptoms if ds.symptom.name in symptoms
+            )
 
-            # Количество совпадений симптомов
-            matches = len(set(symptoms) & set(disease_symptoms))
-            total_symptoms = len(disease_symptoms)
+            if matched_weight > 0:
+                # Базовая вероятность на основе симптомов (0-100%)
+                symptom_probability = (matched_weight / total_weight) * 100
 
-            if matches > 0:
-                probability = (matches / total_symptoms) * 100
-                disease_probabilities.append({"disease": disease.name, "probability": round(probability, 2)})
+                # Минимальная корректировка на возраст
+                age_adjustment = 0.0
+                if user.age < 18:
+                    age_adjustment = -5.0  # Уменьшаем на 5% для детей
+                elif user.age > 60:
+                    age_adjustment = 5.0   # Увеличиваем на 5% для пожилых
 
-        # Сортируем болезни по вероятности убывания
+                # Итоговая вероятность с учетом возраста
+                final_probability = symptom_probability + age_adjustment
+                # Ограничиваем вероятность диапазоном 0-100
+                final_probability = max(0.0, min(100.0, final_probability))
+
+                disease_probabilities.append({
+                    "disease": disease.name,
+                    "probability": round(final_probability, 2)
+                })
+
+        # Сортируем по убыванию вероятности
         disease_probabilities.sort(key=lambda x: x["probability"], reverse=True)
 
-        return {"predictions": disease_probabilities}
+        # Возвращаем топ-3 результата
+        return {"predictions": disease_probabilities[:3]}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
