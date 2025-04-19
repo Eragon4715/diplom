@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional
 
 from sqlalchemy import (
     DateTime, func, Integer, String, Text, ForeignKey, Table, Column, CheckConstraint, Float
@@ -52,12 +52,9 @@ class Disease(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(Text, nullable=True)
-    # Оставляем только диапазон возраста
-    age_min = Column(Integer, nullable=True)  # Минимальный возраст для "предпочитаемого" диапазона
-    age_max = Column(Integer, nullable=True)  # Максимальный возраст для "предпочитаемого" диапазона
 
     users = relationship("User", secondary=user_diseases, back_populates="diseases")
-    symptoms = relationship("Symptom", secondary=disease_symptoms, back_populates="symptoms")
+    symptoms = relationship("Symptom", secondary=disease_symptoms, back_populates="diseases")
 
 
 class Symptom(Base):
@@ -82,12 +79,12 @@ class Note(Base):
 
 # **Pydantic-модели**
 
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
     nickname: str
     age: Optional[int] = None  # Возраст необязательный
-
 
 class UserResponse(BaseModel):
     id: int
@@ -98,23 +95,9 @@ class UserResponse(BaseModel):
     class Config:
         from_attributes = True
 
-
 class DiseaseCreate(BaseModel):
     name: str
     description: str
-    age_min: Optional[int] = None  # Минимальный возраст (необязательное)
-    age_max: Optional[int] = None  # Максимальный возраст (необязательное)
-
-
-class DiseaseResponse(BaseModel):
-    id: int
-    name: str
-    description: str
-    age_min: Optional[int]
-    age_max: Optional[int]
-
-    class Config:
-        from_attributes = True
 
 
 class SymptomCreate(BaseModel):
@@ -132,7 +115,6 @@ class SymptomResponse(BaseModel):
 class DiseaseSymptomLink(BaseModel):
     disease_id: int
     symptom_id: int
-    weight: float = 1.0  # Добавляем вес для связи
 
 
 # **ВОССТАНОВЛЕННЫЕ МОДЕЛИ**
@@ -150,21 +132,9 @@ class AllUsersProfilesMain(BaseModel):
         from_attributes = True
 
 
-# Модели для предсказания болезни
-class PredictionRequest(BaseModel):
-    symptom_names: List[str]
-    # Возраст уже есть у пользователя, не нужно передавать его отдельно
 
-
-class PredictionItem(BaseModel):
-    disease: str
-    description: str
-    probability: float
-
-
-class PredictionResponse(BaseModel):
-    predictions: List[PredictionItem]
-
+from sqlalchemy import Column, Integer, String, ForeignKey
+from sqlalchemy.orm import relationship
 
 class HealthMetric(Base):
     __tablename__ = "health_metrics"
@@ -181,6 +151,7 @@ class HealthMetricCreate(BaseModel):
     name: str
     value: str
 
+from datetime import datetime
 
 class HealthMetricResponse(BaseModel):
     id: int
@@ -189,4 +160,4 @@ class HealthMetricResponse(BaseModel):
     created: datetime  # Добавляем поле created
 
     class Config:
-        from_attributes = True
+        from_attributes = True  # Ранее known as `orm_mode = True`
