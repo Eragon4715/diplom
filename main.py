@@ -14,9 +14,10 @@ from src.db.models import (
     DiseaseSymptomLink,
     HealthMetricCreate, HealthMetricResponse, PredictionRequest, PredictionResponse, disease_symptoms
 )
+
 from src.utils.users import (
     hash_password, verify_password, create_access_token, get_user_by_nickname,
-    get_users, get_current_user, create_note, get_notes_by_user,NoteCreate, NoteResponse,
+    get_users, get_current_user, NoteCreate, NoteResponse, create_note, get_notes_by_user,
     add_disease_to_user, get_user_diseases, create_symptom, link_disease_symptom
 )
 
@@ -239,9 +240,9 @@ async def add_disease(
 async def get_diseases(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     return await get_user_diseases(db, current_user.id)
 
-# Создание болезни (без токена)
+# Создание болезни
 @app.post("/disease", response_model=DiseaseResponse, tags=['Болезни'])
-async def create_disease(disease_data: DiseaseCreate, db: AsyncSession = Depends(get_db)):
+async def create_disease(disease_data: DiseaseCreate, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = await db.execute(select(Disease).filter(Disease.name == disease_data.name))
     existing_disease = result.scalars().first()
     if existing_disease:
