@@ -590,3 +590,14 @@ async def get_health_metrics(
     result = await db.execute(select(HealthMetric).filter(HealthMetric.user_id == current_user.id))
     metrics = result.scalars().all()
     return metrics
+
+from src.db.models import SymptomResponse
+
+@app.get("/symptoms", response_model=list[SymptomResponse], tags=['Симптомы'])
+async def get_symptoms(db: AsyncSession = Depends(get_db)):
+    """Получить список всех симптомов"""
+    result = await db.execute(select(Symptom))
+    symptoms = result.scalars().all()
+    if not symptoms:
+        return []
+    return symptoms
