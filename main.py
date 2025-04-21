@@ -414,7 +414,17 @@ async def create_disease(disease_data: DiseaseCreate, db: AsyncSession = Depends
 """Симптомы--------------------------------------"""
 from src.utils.users import create_symptom, link_disease_symptom
 from src.db.models import Symptom, DiseaseSymptomLink,SymptomResponse,SymptomCreate
-
+@app.get("/symptoms", response_model=list[str], tags=["Симптомы"])
+async def get_symptoms(db: AsyncSession = Depends(get_db)):
+    """Получить список всех симптомов"""
+    try:
+        result = await db.execute(select(Symptom))
+        symptoms = result.scalars().all()
+        if not symptoms:
+            raise HTTPException(status_code=404, detail="Симптомы не найдены")
+        return [symptom.name for symptom in symptoms]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @app.post("/symptom", response_model=SymptomResponse, tags=['Симптомы'])
 async def add_symptom(symptom_data: SymptomCreate, db: AsyncSession = Depends(get_db)):
     """Добавить новый симптом"""
