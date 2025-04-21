@@ -52,6 +52,8 @@ class Disease(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(Text, nullable=True)
+    age_min = Column(Integer, nullable=True)  # Минимальный возраст для болезни
+    age_max = Column(Integer, nullable=True)  # Максимальный возраст для болезни
 
     users = relationship("User", secondary=user_diseases, back_populates="diseases")
     symptoms = relationship("Symptom", secondary=disease_symptoms, back_populates="diseases")
@@ -98,7 +100,16 @@ class UserResponse(BaseModel):
 class DiseaseCreate(BaseModel):
     name: str
     description: str
+    age_min: Optional[int] = None  # Минимальный возраст (опционально)
+    age_max: Optional[int] = None  # Максимальный возраст (опционально)
+from pydantic import BaseModel
+from typing import Optional
 
+class DiseaseUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    age_min: Optional[int] = None
+    age_max: Optional[int] = None
 
 class SymptomCreate(BaseModel):
     name: str

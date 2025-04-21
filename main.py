@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, Query, APIRouter
+from fastapi import FastAPI, Depends, Query
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,12 +30,11 @@ async def websocket_endpoint(websocket: WebSocket, db: AsyncSession = Depends(ge
 
 
 
-from src.utils.users import hash_password, verify_password, create_access_token, get_user_by_nickname
+from src.utils.users import hash_password, verify_password, create_access_token
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 from passlib.context import CryptContext
-from src.db.models import User, UserCreate, disease_symptoms
+from src.db.models import User, UserCreate, disease_symptoms, DiseaseUpdate
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -348,7 +347,37 @@ async def add_disease(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.put("/disease/{disease_id}/update", response_model=dict, tags=['Болезни'])
+async def update_disease(
+    disease_id: int,
+    disease_data: DiseaseUpdate,
+    db: AsyncSession = Depends(get_db)
+):
+    # Находим болезнь
+    disease = await db.get(Disease, disease_id)
+    if not disease:
+        raise HTTPException(status_code=404, detail="Болезнь не найдена")
 
+    # Обновляем поля, если они переданы
+    if disease_data.name:
+        result = await db.execute(select(Disease).filter(Disease.name == disease_data.name))
+        existing_disease = result.scalars().first()
+        if existing_disease and existing_disease.id != disease_id:
+            raise HTTPException(status_code=400, detail="Болезнь с таким названием уже существует")
+        disease.name = disease_data.name
+
+    if disease_data.description is not None:
+        disease.description = disease_data.description
+    if disease_data.age_min is not None:
+        disease.age_min = disease_data.age_min
+    if disease_data.age_max is not None:
+        disease.age_max = disease_data.age_max
+
+    db.add(disease)
+    await db.commit()
+    await db.refresh(disease)
+
+    return {"msg": "Disease updated", "id": disease.id, "name": disease.name}
 
 
 @app.get("/diseases", response_model=list[str], tags=['Болезни'])
@@ -363,14 +392,18 @@ from src.db.models import DiseaseCreate
 
 @app.post("/disease", response_model=dict, tags=['Болезни'])
 async def create_disease(disease_data: DiseaseCreate, db: AsyncSession = Depends(get_db)):
-
     result = await db.execute(select(Disease).filter(Disease.name == disease_data.name))
     existing_disease = result.scalars().first()
 
     if existing_disease:
         raise HTTPException(status_code=400, detail="Болезнь с таким названием уже существует")
 
-    new_disease = Disease(name=disease_data.name, description=disease_data.description)
+    new_disease = Disease(
+        name=disease_data.name,
+        description=disease_data.description,
+        age_min=disease_data.age_min,
+        age_max=disease_data.age_max
+    )
     db.add(new_disease)
     await db.commit()
     await db.refresh(new_disease)
@@ -485,23 +518,49 @@ async def predict_disease(
         disease_probabilities = []
 
         for disease in diseases:
-            # Сумма весов всех симптомов болезни
-            total_weight = sum(ds.weight for ds in disease.symptoms)
-            # Сумма весов совпадающих симптомов
-            matched_weight = sum(
-                ds.weight for ds in disease.symptoms if ds.symptom.name in symptoms
+            # Получаем веса симптомов из таблицы disease_symptoms
+            symptom_weights = await db.execute(
+                select(disease_symptoms.c.weight)
+                .filter(disease_symptoms.c.disease_id == disease.id)
+                .join(Symptom, Symptom.id == disease_symptoms.c.symptom_id)
             )
+            weights = [row[0] for row in symptom_weights]
+
+            # Сумма весов всех симптомов болезни
+            total_weight = sum(weights) if weights else 1.0
+
+            # Сумма весов совпадающих симптомов
+            matched_weight = 0.0
+            for symptom in disease.symptoms:
+                if symptom.name in symptoms:
+                    result = await db.execute(
+                        select(disease_symptoms.c.weight)
+                        .filter(
+                            disease_symptoms.c.disease_id == disease.id,
+                            disease_symptoms.c.symptom_id == symptom.id
+                        )
+                    )
+                    weight = result.scalar_one_or_none() or 1.0
+                    matched_weight += weight
 
             if matched_weight > 0:
                 # Базовая вероятность на основе симптомов (0-100%)
                 symptom_probability = (matched_weight / total_weight) * 100
 
-                # Минимальная корректировка на возраст
+                # Корректировка на возраст с учётом age_min и age_max
                 age_adjustment = 0.0
+                if disease.age_min is not None and user.age < disease.age_min:
+                    age_adjustment = -10.0  # Уменьшаем вероятность на 10%, если возраст меньше минимального
+                elif disease.age_max is not None and user.age > disease.age_max:
+                    age_adjustment = -10.0  # Уменьшаем вероятность на 10%, если возраст больше максимального
+                else:
+                    age_adjustment = 5.0  # Увеличиваем на 5%, если возраст в диапазоне
+
+                # Дополнительная корректировка для крайних возрастных групп
                 if user.age < 18:
-                    age_adjustment = -5.0  # Уменьшаем на 5% для детей
+                    age_adjustment -= 5.0  # Ещё -5% для детей
                 elif user.age > 60:
-                    age_adjustment = 5.0   # Увеличиваем на 5% для пожилых
+                    age_adjustment += 5.0  # Ещё +5% для пожилых
 
                 # Итоговая вероятность с учетом возраста
                 final_probability = symptom_probability + age_adjustment
