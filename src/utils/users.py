@@ -177,7 +177,5 @@ async def get_all_diseases(db: AsyncSession):
     """Получить список всех болезней с их описаниями"""
     result = await db.execute(select(Disease))
     diseases = result.scalars().all()
-    return [{"name": disease.name, "description": disease.description} for disease in diseases]
-
-
+    return [{"id": disease.id, "name": disease.name, "description": disease.description} for disease in diseases]
 
