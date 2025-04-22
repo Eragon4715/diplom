@@ -380,10 +380,15 @@ async def update_disease(
     return {"msg": "Disease updated", "id": disease.id, "name": disease.name}
 
 
-@app.get("/diseases", response_model=list[str], tags=['Болезни'])
-async def get_diseases(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    """Получить список болезней пользователя"""
-    return await get_user_diseases(db, current_user["id"])
+from src.utils.users import get_all_diseases  # Импортируем новую функцию
+
+@app.get("/diseases", response_model=list[dict], tags=['Болезни'])
+async def get_diseases(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Получить список всех болезней с их описаниями"""
+    try:
+        return await get_all_diseases(db)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 from src.db.models import Disease

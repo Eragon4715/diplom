@@ -173,4 +173,11 @@ async def link_disease_symptom(db: AsyncSession, disease_id: int, symptom_id: in
 
 
 
+async def get_all_diseases(db: AsyncSession):
+    """Получить список всех болезней с их описаниями"""
+    result = await db.execute(select(Disease))
+    diseases = result.scalars().all()
+    return [{"name": disease.name, "description": disease.description} for disease in diseases]
+
+
 
