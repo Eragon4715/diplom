@@ -491,69 +491,84 @@ async def add_symptom_to_disease(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
+from sqlalchemy.sql import update
+from src.db.models import User, Disease, user_diseases  # Убедись, что импорты корректны
+# Добавляем Pydantic модель для тела запроса
+from pydantic import BaseModel
+
+class AddDiseaseRequest(BaseModel):
+    probability: float
+
+# Удаляем оба старых определения /add_disease/{disease_id} и заменяем их на это
 @app.post("/add_disease/{disease_id}", tags=['Болезни'])
 async def add_disease(
     disease_id: int,
-    probability: float = Query(..., ge=0.0, le=100.0),
+    request: AddDiseaseRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Добавить болезнь в список пользователя с вероятностью"""
-    try:
-        # 1. Загружаем болезнь через асинхронный запрос
-        result = await db.execute(select(Disease).where(Disease.id == disease_id))
-        disease = result.scalars().first()
+    probability = request.probability
+    print(f"Received disease_id: {disease_id}, probability: {probability}")  # Логируем входные параметры
 
-        if not disease:
-            raise HTTPException(status_code=404, detail="Болезнь не найдена")
+    # 1. Загружаем болезнь через асинхронный запрос
+    result = await db.execute(select(Disease).where(Disease.id == disease_id))
+    disease = result.scalars().first()
 
-        # 2. Загружаем пользователя вместе с болезнями
-        user_result = await db.execute(
-            select(User).options(selectinload(User.diseases)).where(User.id == current_user.id)
-        )
-        user = user_result.scalars().first()
+    if not disease:
+        raise HTTPException(status_code=404, detail="Болезнь не найдена")
 
-        if not user:
-            raise HTTPException(status_code=404, detail="Пользователь не найден")
+    # 2. Загружаем пользователя вместе с болезнями
+    user_result = await db.execute(
+        select(User).options(selectinload(User.diseases)).where(User.id == current_user.id)
+    )
+    user = user_result.scalars().first()
 
-        # 3. Проверяем, есть ли болезнь у пользователя
-        if disease in user.diseases:
-            # Обновляем probability для существующей записи
-            await db.execute(
-                update(user_diseases)
-                .where(user_diseases.c.user_id == user.id, user_diseases.c.disease_id == disease.id)
-                .values(probability=probability)
-            )
-            await db.commit()
-            return {
-                "message": "Вероятность болезни обновлена",
-                "disease": disease.name,
-                "probability": probability
-            }
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-        # 4. Добавляем болезнь в список пользователя
-        user.diseases.append(disease)
-        await db.commit()
-
-        # 5. Обновляем probability для новой записи
+    # 3. Проверяем, есть ли болезнь у пользователя
+    if disease in user.diseases:
+        # Обновляем probability для существующей записи
+        print(f"Updating probability for user_id={user.id}, disease_id={disease.id} to {probability}")
         await db.execute(
             update(user_diseases)
             .where(user_diseases.c.user_id == user.id, user_diseases.c.disease_id == disease.id)
             .values(probability=probability)
         )
         await db.commit()
-
-        # 6. Синхронизируем данные
-        await db.refresh(user)
-
         return {
-            "message": "Болезнь добавлена",
+            "message": "Вероятность болезни обновлена",
             "disease": disease.name,
             "probability": probability
         }
 
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    # 4. Добавляем болезнь в список пользователя
+    print(f"Adding new disease for user_id={user.id}, disease_id={disease.id}")
+    user.diseases.append(disease)
+    await db.commit()
+
+    # 5. Обновляем probability для новой записи
+    print(f"Setting probability for new record: {probability}")
+    await db.execute(
+        update(user_diseases)
+        .where(user_diseases.c.user_id == user.id, user_diseases.c.disease_id == disease.id)
+        .values(probability=probability)
+    )
+    await db.commit()
+
+    # 6. Синхронизируем данные
+    await db.refresh(user)
+
+    return {
+        "message": "Болезнь добавлена",
+        "disease": disease.name,
+        "probability": probability
+    }
 
 
 from fastapi import APIRouter, Depends, HTTPException
