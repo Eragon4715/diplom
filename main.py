@@ -122,7 +122,8 @@ async def update_user(
         if user_data.nickname:
             # Проверяем уникальность никнейма
             result = await db.execute(select(User).filter(User.nickname == user_data.nickname))
-            if result.scalars().first() and result.scalars().first().id != current_user.id:
+            existing_user = result.scalars().first()  # Сохраняем результат в переменную
+            if existing_user and existing_user.id != current_user.id:
                 raise HTTPException(status_code=400, detail="Nickname already taken")
             current_user.nickname = user_data.nickname
 
