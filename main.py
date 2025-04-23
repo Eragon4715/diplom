@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, Query
+from sqlalchemy import update
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -490,35 +491,66 @@ async def add_symptom_to_disease(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/user/user_diseases", tags=['Болезни'])
-async def get_user_diseases(
+@app.post("/add_disease/{disease_id}", tags=['Болезни'])
+async def add_disease(
+    disease_id: int,
+    probability: float = Query(..., ge=0.0, le=100.0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Получить список болезней пользователя (название, описание и вероятность)"""
+    """Добавить болезнь в список пользователя с вероятностью"""
     try:
-        # Обновляем данные пользователя
-        await db.refresh(current_user, ["diseases"])
-        diseases = current_user.diseases
+        # 1. Загружаем болезнь через асинхронный запрос
+        result = await db.execute(select(Disease).where(Disease.id == disease_id))
+        disease = result.scalars().first()
 
-        # Получаем вероятности из таблицы user_diseases
-        result = []
-        for disease in diseases:
-            # Запрашиваем вероятность из таблицы user_diseases
-            probability_result = await db.execute(
-                select(user_diseases.c.probability)
-                .filter(user_diseases.c.user_id == current_user.id)
-                .filter(user_diseases.c.disease_id == disease.id)
+        if not disease:
+            raise HTTPException(status_code=404, detail="Болезнь не найдена")
+
+        # 2. Загружаем пользователя вместе с болезнями
+        user_result = await db.execute(
+            select(User).options(selectinload(User.diseases)).where(User.id == current_user.id)
+        )
+        user = user_result.scalars().first()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+        # 3. Проверяем, есть ли болезнь у пользователя
+        if disease in user.diseases:
+            # Обновляем probability для существующей записи
+            await db.execute(
+                update(user_diseases)
+                .where(user_diseases.c.user_id == user.id, user_diseases.c.disease_id == disease.id)
+                .values(probability=probability)
             )
-            probability = probability_result.scalar_one_or_none() or 0.0
-
-            result.append({
-                "name": disease.name,
-                "description": disease.description,
+            await db.commit()
+            return {
+                "message": "Вероятность болезни обновлена",
+                "disease": disease.name,
                 "probability": probability
-            })
+            }
 
-        return result
+        # 4. Добавляем болезнь в список пользователя
+        user.diseases.append(disease)
+        await db.commit()
+
+        # 5. Обновляем probability для новой записи
+        await db.execute(
+            update(user_diseases)
+            .where(user_diseases.c.user_id == user.id, user_diseases.c.disease_id == disease.id)
+            .values(probability=probability)
+        )
+        await db.commit()
+
+        # 6. Синхронизируем данные
+        await db.refresh(user)
+
+        return {
+            "message": "Болезнь добавлена",
+            "disease": disease.name,
+            "probability": probability
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
