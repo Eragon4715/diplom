@@ -292,7 +292,45 @@ async def delete_note(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+from fastapi import HTTPException
 
+@app.get("/user/user_diseases", response_model=list[dict], tags=['Болезни'])
+async def get_user_diseases(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Получить список болезней пользователя с вероятностями"""
+    try:
+        # 1. Загружаем пользователя вместе с его болезнями
+        user_result = await db.execute(
+            select(User).options(selectinload(User.diseases)).where(User.id == current_user.id)
+        )
+        user = user_result.scalars().first()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+        # 2. Получаем вероятности из таблицы user_diseases
+        disease_probabilities = await db.execute(
+            select(user_diseases).where(user_diseases.c.user_id == current_user.id)
+        )
+        probabilities = {row.disease_id: row.probability for row in disease_probabilities}
+
+        # 3. Формируем список болезней с вероятностями
+        diseases = [
+            {
+                "id": disease.id,
+                "name": disease.name,
+                "description": disease.description,
+                "probability": probabilities.get(disease.id, 0.0)
+            }
+            for disease in user.diseases
+        ]
+
+        return diseases
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 
