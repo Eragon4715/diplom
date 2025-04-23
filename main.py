@@ -498,12 +498,13 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import update
 from src.db.models import User, Disease, user_diseases  # Убедись, что импорты корректны
 # Добавляем Pydantic модель для тела запроса
+# Добавляем Pydantic модель для тела запроса (если ещё не добавлено)
 from pydantic import BaseModel
 
 class AddDiseaseRequest(BaseModel):
     probability: float
 
-# Удаляем оба старых определения /add_disease/{disease_id} и заменяем их на это
+# Заменяем эндпоинт /add_disease/{disease_id}
 @app.post("/add_disease/{disease_id}", tags=['Болезни'])
 async def add_disease(
     disease_id: int,
