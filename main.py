@@ -498,7 +498,6 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy.sql import update
 from src.db.models import User, Disease, user_diseases  # Убедись, что импорты корректны
 # Добавляем Pydantic модель для тела запроса
-# Добавляем Pydantic модель для тела запроса (если ещё не добавлено)
 from pydantic import BaseModel
 
 class AddDiseaseRequest(BaseModel):
