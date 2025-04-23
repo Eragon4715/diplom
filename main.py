@@ -316,7 +316,7 @@ async def get_user_diseases(
         )
         probabilities = {row.disease_id: row.probability for row in disease_probabilities}
 
-        # 3. Формируем список болезней с вероятностями
+        # 3. Формируем список болезней с вероятностямиf
         diseases = [
             {
                 "id": disease.id,
