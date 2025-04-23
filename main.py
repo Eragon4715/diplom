@@ -34,7 +34,7 @@ from src.utils.users import hash_password, verify_password, create_access_token
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from passlib.context import CryptContext
-from src.db.models import User, UserCreate, disease_symptoms, DiseaseUpdate
+from src.db.models import User, UserCreate, disease_symptoms, DiseaseUpdate, user_diseases
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -308,10 +308,11 @@ from sqlalchemy.orm import selectinload
 @app.post("/add_disease/{disease_id}", tags=['Болезни'])
 async def add_disease(
     disease_id: int,
+    probability: float = Query(..., ge=0.0, le=100.0),  # Добавляем параметр probability (от 0 до 100)
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Добавить болезнь в список пользователя"""
+    """Добавить болезнь в список пользователя с вероятностью"""
     try:
         # 1. Загружаем болезнь через асинхронный запрос
         result = await db.execute(select(Disease).where(Disease.id == disease_id))
@@ -335,13 +336,25 @@ async def add_disease(
 
         # 4. Добавляем болезнь в список пользователя
         user.diseases.append(disease)
-        db.add(user)
 
-        # 5. Синхронизируем данные
+        # 5. Сохраняем связь с вероятностью
+        await db.execute(
+            user_diseases.insert().values(
+                user_id=user.id,
+                disease_id=disease.id,
+                probability=probability
+            )
+        )
+
+        # 6. Синхронизируем данные
         await db.commit()
         await db.refresh(user)
 
-        return {"message": "Болезнь добавлена", "disease": disease.name}
+        return {
+            "message": "Болезнь добавлена",
+            "disease": disease.name,
+            "probability": probability
+        }
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -482,15 +495,30 @@ async def get_user_diseases(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Получить список болезней пользователя (название и описание)"""
+    """Получить список болезней пользователя (название, описание и вероятность)"""
     try:
-        await db.refresh(current_user, ["diseases"])  # Обновляем данные пользователя
-        diseases = current_user.diseases  # Получаем список болезней
+        # Обновляем данные пользователя
+        await db.refresh(current_user, ["diseases"])
+        diseases = current_user.diseases
 
-        return [
-            {"name": disease.name, "description": disease.description}
-            for disease in diseases
-        ]
+        # Получаем вероятности из таблицы user_diseases
+        result = []
+        for disease in diseases:
+            # Запрашиваем вероятность из таблицы user_diseases
+            probability_result = await db.execute(
+                select(user_diseases.c.probability)
+                .filter(user_diseases.c.user_id == current_user.id)
+                .filter(user_diseases.c.disease_id == disease.id)
+            )
+            probability = probability_result.scalar_one_or_none() or 0.0
+
+            result.append({
+                "name": disease.name,
+                "description": disease.description,
+                "probability": probability
+            })
+
+        return result
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
