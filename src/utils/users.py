@@ -79,6 +79,7 @@ from pydantic import BaseModel
 from datetime import datetime
 
 class NoteBase(BaseModel):
+    title: str  # Новое поле для темы
     text: str
 
 class NoteCreate(NoteBase):
@@ -96,7 +97,7 @@ async def get_notes_by_user(db: AsyncSession, user_id: int):
     return result.scalars().all()
 
 async def create_note(db: AsyncSession, user_id: int, note_data: NoteCreate):
-    new_note = Note(user_id=user_id, text=note_data.text)
+    new_note = Note(user_id=user_id, title=note_data.title, text=note_data.text)
     db.add(new_note)
     await db.commit()
     await db.refresh(new_note)

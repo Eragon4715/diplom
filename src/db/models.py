@@ -74,6 +74,7 @@ class Note(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"))
+    title = Column(String, nullable=False)  # Новое поле для темы
     text = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

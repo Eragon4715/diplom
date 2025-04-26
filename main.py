@@ -198,75 +198,59 @@ async def get_user_info_by_nickname(nickname: str, db: AsyncSession = Depends(ge
 from src.utils.users import NoteCreate, NoteResponse
 from src.utils.users import create_note, get_notes_by_user
 from src.utils.users import get_current_user  # Функция для получения текущего пользователя
-
+from src.db.models import Note
 
 @app.post("/add_note", response_model=NoteResponse, tags=['Заметки'])
 async def add_note(
     note_data: NoteCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: dict = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    """Добавить новую заметку"""
     return await create_note(db, current_user.id, note_data)
-
-
-from src.db.models import UserResponse
-
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from src.utils.users import Note, NoteResponse
-
 
 @app.get("/notes", response_model=list[NoteResponse], tags=['Заметки'])
 async def get_user_notes(
         db: AsyncSession = Depends(get_db),
-        current_user: User = Depends(get_current_user),  # Исправлено
+        current_user: User = Depends(get_current_user),
 ):
-    """Получить все заметки пользователя"""
     result = await db.execute(
         select(Note)
-        .filter(Note.user_id == current_user.id)  # Теперь точно User, а не dict
+        .filter(Note.user_id == current_user.id)
     )
     notes = result.scalars().all()
 
     if not notes:
-        return []  # Если заметок нет, возвращаем пустой список
+        return []
 
-    return notes  # Возвращаем список заметок
-
+    return notes
 
 @app.put("/edit_note/{note_id}", tags=['Заметки'])
 async def edit_note(
     note_id: int,
-    new_text: str,
+    new_title: str = Query(...),  # Новое поле для темы
+    new_text: str = Query(...),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Редактировать заметку пользователя по ID"""
     try:
-        # Поиск заметки
         note = await db.get(Note, note_id)
         if not note:
             raise HTTPException(status_code=404, detail="Заметка не найдена")
 
-        # Проверка владельца заметки
         if note.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="Вы не можете редактировать чужую заметку")
 
-        # Обновление текста заметки
+        note.title = new_title
         note.text = new_text
         db.add(note)
 
-        # Коммит изменений
         await db.commit()
         await db.refresh(note)
 
-        return {"message": "Заметка обновлена", "note": {"id": note.id, "text": note.text}}
+        return {"message": "Заметка обновлена", "note": {"id": note.id, "title": note.title, "text": note.text}}
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
 
 @app.delete("/delete_note/{note_id}", tags=['Заметки'])
 async def delete_note(
@@ -274,18 +258,14 @@ async def delete_note(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Удалить заметку пользователя по ID"""
     try:
-        # Поиск заметки
         note = await db.get(Note, note_id)
         if not note:
             raise HTTPException(status_code=404, detail="Заметка не найдена")
 
-        # Проверка владельца заметки
         if note.user_id != current_user.id:
             raise HTTPException(status_code=403, detail="Вы не можете удалить чужую заметку")
 
-        # Удаление заметки
         await db.delete(note)
         await db.commit()
 
