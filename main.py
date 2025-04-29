@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Depends, Query
-from sqlalchemy import update
+from sqlalchemy import update, func
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -276,124 +276,65 @@ async def delete_note(
 from fastapi import HTTPException
 
 @app.get("/user/user_diseases", response_model=list[dict], tags=['Болезни'])
-async def get_user_diseases(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Получить список болезней пользователя с вероятностями"""
+async def get_user_diseases(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Получить список болезней пользователя с вероятностями и датой предсказания"""
     try:
-        # 1. Загружаем пользователя вместе с его болезнями
-        user_result = await db.execute(
-            select(User).options(selectinload(User.diseases)).where(User.id == current_user.id)
-        )
+        user_result = await db.execute(select(User).options(selectinload(User.diseases)).where(User.id == current_user.id))
         user = user_result.scalars().first()
-
         if not user:
             raise HTTPException(status_code=404, detail="Пользователь не найден")
-
-        # 2. Получаем вероятности из таблицы user_diseases
-        disease_probabilities = await db.execute(
-            select(user_diseases).where(user_diseases.c.user_id == current_user.id)
-        )
-        probabilities = {row.disease_id: row.probability for row in disease_probabilities}
-
-        # 3. Формируем список болезней с вероятностямиf
+        disease_probabilities = await db.execute(select(user_diseases).where(user_diseases.c.user_id == current_user.id))
+        probabilities_and_dates = {row.disease_id: {"probability": row.probability, "prediction_date": row.prediction_date} for row in disease_probabilities}
         diseases = [
             {
                 "id": disease.id,
                 "name": disease.name,
                 "description": disease.description,
-                "probability": probabilities.get(disease.id, 0.0)
+                "probability": probabilities_and_dates.get(disease.id, {"probability": 0.0})["probability"],
+                "prediction_date": probabilities_and_dates.get(disease.id, {"prediction_date": None})["prediction_date"]
             }
             for disease in user.diseases
         ]
-
         return diseases
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-
-
-from src.utils.users import add_disease_to_user, get_user_diseases  # Импортируем функции
-
-from sqlalchemy.future import select
-
-from sqlalchemy.future import select
-
-from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload
-from pydantic import BaseModel
 
 class AddDiseaseRequest(BaseModel):
     probability: float
 
 @app.post("/add_disease/{disease_id}", tags=['Болезни'])
-async def add_disease(
-    disease_id: int,
-    request: AddDiseaseRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """Добавить болезнь в список пользователя с вероятностью"""
+async def add_disease(disease_id: int, request: AddDiseaseRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     probability = request.probability
-    print(f"Received disease_id: {disease_id}, probability: {probability}")  # Логируем входные параметры
-
-    # 1. Загружаем болезнь через асинхронный запрос
+    print(f"Received disease_id: {disease_id}, probability: {probability}")
     result = await db.execute(select(Disease).where(Disease.id == disease_id))
     disease = result.scalars().first()
-
     if not disease:
         raise HTTPException(status_code=404, detail="Болезнь не найдена")
-
-    # 2. Загружаем пользователя вместе с болезнями
-    user_result = await db.execute(
-        select(User).options(selectinload(User.diseases)).where(User.id == current_user.id)
-    )
+    user_result = await db.execute(select(User).options(selectinload(User.diseases)).where(User.id == current_user.id))
     user = user_result.scalars().first()
-
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-
-    # 3. Проверяем, есть ли болезнь у пользователя
     if disease in user.diseases:
-        # Обновляем probability для существующей записи
         print(f"Updating probability for user_id={user.id}, disease_id={disease.id} to {probability}")
         await db.execute(
             update(user_diseases)
             .where(user_diseases.c.user_id == user.id, user_diseases.c.disease_id == disease.id)
-            .values(probability=probability)
+            .values(probability=probability, prediction_date=func.now())
         )
         await db.commit()
-        return {
-            "message": "Вероятность болезни обновлена",
-            "disease": disease.name,
-            "probability": probability
-        }
-
-    # 4. Добавляем болезнь в список пользователя
+        return {"message": "Вероятность болезни обновлена", "disease": disease.name, "probability": probability}
     print(f"Adding new disease for user_id={user.id}, disease_id={disease.id}")
     user.diseases.append(disease)
     await db.commit()
-
-    # 5. Обновляем probability для новой записи
     print(f"Setting probability for new record: {probability}")
     await db.execute(
         update(user_diseases)
         .where(user_diseases.c.user_id == user.id, user_diseases.c.disease_id == disease.id)
-        .values(probability=probability)
+        .values(probability=probability, prediction_date=func.now())
     )
     await db.commit()
-
-    # 6. Синхронизируем данные
     await db.refresh(user)
-
-    return {
-        "message": "Болезнь добавлена",
-        "disease": disease.name,
-        "probability": probability
-    }
+    return {"message": "Болезнь добавлена", "disease": disease.name, "probability": probability}
 
 @app.put("/disease/{disease_id}/update", response_model=dict, tags=['Болезни'])
 async def update_disease(

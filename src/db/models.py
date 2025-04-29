@@ -20,7 +20,8 @@ user_diseases = Table(
     Base.metadata,
     Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
     Column("disease_id", Integer, ForeignKey("diseases.id", ondelete="CASCADE"), primary_key=True),
-    Column("probability", Float, nullable=False, default=0.0)  # Добавляем поле для вероятности
+    Column("probability", Float, nullable=False, default=0.0),  # Добавляем поле для вероятности
+    Column("prediction_date", DateTime, default=func.now(), nullable=False)
 )
 
 # Промежуточная таблица для связи "многие ко многим" между болезнями и симптомами
