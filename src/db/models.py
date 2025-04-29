@@ -14,7 +14,7 @@ class Base(DeclarativeBase):
     updated: Mapped[DateTime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
 
-# Промежуточная таблица для связи "многие ко многим" между пользователями и болезнями
+# Промежуточная таблица для связи "многие ко многим " между пользователями и болезнями
 user_diseases = Table(
     "user_diseases",
     Base.metadata,

@@ -431,7 +431,7 @@ async def add_symptom_to_disease(
     weight: float = 1.0,  # Опционально, по умолчанию 1.0
     db: AsyncSession = Depends(get_db)
 ):
-    """Привязать симптом к болезни с указанием веса"""
+    """Привязать симптом к болезни с указанием вес"""
     try:
         # Проверяем существование болезни и симптома
         disease = await db.get(Disease, disease_id)
