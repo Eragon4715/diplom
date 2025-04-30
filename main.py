@@ -278,7 +278,6 @@ from sqlalchemy.orm import selectinload
 
 @app.get("/user/user_diseases", response_model=list[dict], tags=['Болезни'])
 async def get_user_diseases(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
-    """Получить список всехх записей о болезнях пользователя с вероятностями и датами"""
     try:
         # Получаем все записи из user_diseases для текущего пользователя
         result = await db.execute(
@@ -308,9 +307,10 @@ async def get_user_diseases(db: AsyncSession = Depends(get_db), current_user: Us
         diseases.sort(key=lambda x: x["created_at"], reverse=True)
 
         return diseases
-
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
 class AddDiseaseRequest(BaseModel):
     probability: float
 
