@@ -14,16 +14,16 @@ class Base(DeclarativeBase):
     updated: Mapped[DateTime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
 
-# Промежуточная таблица для связии "многие ко многим" между пользователями и болезнями
+# Промежуточная таблица для связи "многие ко многим" между пользователями и болезнями
 class UserDisease(Base):
     __tablename__ = "user_diseases"
 
-    id = Column(Integer, primary_key=True, index=True)  # Добавляем отдельный первичный ключ
+    id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     disease_id = Column(Integer, ForeignKey("diseases.id", ondelete="CASCADE"), nullable=False)
     probability = Column(Float, nullable=False, default=0.0)
     prediction_date = Column(DateTime, default=func.now(), nullable=False)
-    created_at = Column(DateTime, default=func.now(), nullable=False)  # Поле для отслеживания даты создания
+    created_at = Column(DateTime, default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="user_diseases")
     disease = relationship("Disease", back_populates="user_diseases")
