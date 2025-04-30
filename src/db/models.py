@@ -14,15 +14,19 @@ class Base(DeclarativeBase):
     updated: Mapped[DateTime] = mapped_column(DateTime, default=func.now(), onupdate=func.now())
 
 
-# Промежуточная таблица для связи "многие ко многим " между пользователями и болезнями
-user_diseases = Table(
-    "user_diseases",
-    Base.metadata,
-    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column("disease_id", Integer, ForeignKey("diseases.id", ondelete="CASCADE"), primary_key=True),
-    Column("probability", Float, nullable=False, default=0.0),  # Добавляем поле для вероятности
-    Column("prediction_date", DateTime, default=func.now(), nullable=False)
-)
+# Промежуточная таблица для связи "многие ко многим" между пользователями и болезнями
+class UserDisease(Base):
+    __tablename__ = "user_diseases"
+
+    id = Column(Integer, primary_key=True, index=True)  # Добавляем отдельный первичный ключ
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    disease_id = Column(Integer, ForeignKey("diseases.id", ondelete="CASCADE"), nullable=False)
+    probability = Column(Float, nullable=False, default=0.0)
+    prediction_date = Column(DateTime, default=func.now(), nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)  # Поле для отслеживания даты создания
+
+    user = relationship("User", back_populates="user_diseases")
+    disease = relationship("Disease", back_populates="user_diseases")
 
 # Промежуточная таблица для связи "многие ко многим" между болезнями и симптомами
 disease_symptoms = Table(
@@ -34,6 +38,7 @@ disease_symptoms = Table(
 )
 
 
+# Обновляем связи в классах User и Disease
 class User(Base):
     __tablename__ = "users"
 
@@ -41,12 +46,11 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     nickname = Column(String, unique=True, index=True, nullable=False)
-    age = Column(Integer, nullable=True)  # Возраст, может быть необязательным
+    age = Column(Integer, nullable=True)
 
     notes = relationship("Note", back_populates="user", cascade="all, delete-orphan")
-    diseases = relationship("Disease", secondary=user_diseases, back_populates="users")
+    user_diseases = relationship("UserDisease", back_populates="user", cascade="all, delete")  # Обновляем связь
     health_metrics = relationship("HealthMetric", back_populates="user", cascade="all, delete")
-
 
 class Disease(Base):
     __tablename__ = "diseases"
@@ -54,12 +58,11 @@ class Disease(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(Text, nullable=True)
-    age_min = Column(Integer, nullable=True)  # Минимальный возраст для болезни
-    age_max = Column(Integer, nullable=True)  # Максимальный возраст для болезни
+    age_min = Column(Integer, nullable=True)
+    age_max = Column(Integer, nullable=True)
 
-    users = relationship("User", secondary=user_diseases, back_populates="diseases")
+    user_diseases = relationship("UserDisease", back_populates="disease")  # Обновляем связь
     symptoms = relationship("Symptom", secondary=disease_symptoms, back_populates="diseases")
-
 
 class Symptom(Base):
     __tablename__ = "symptoms"
