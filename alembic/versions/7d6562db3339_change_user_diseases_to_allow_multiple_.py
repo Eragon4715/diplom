@@ -36,7 +36,7 @@ def downgrade():
     # Удаляем новую таблицу
     op.drop_table('user_diseases')
 
-    # Восстанавливаем старую структуру таблицы user_diseases
+    # Восстанавливаем старую структуру таблицыы user_diseases
     op.create_table(
         'user_diseases',
         sa.Column('user_id', sa.Integer(), nullable=False),
