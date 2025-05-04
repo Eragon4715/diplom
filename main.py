@@ -330,7 +330,7 @@ async def add_disease(
     current_user: User = Depends(get_current_user)
 ):
     probability = request.probability
-    symptoms = request.symptoms  # Получаем список симптомов из запроса
+    symptoms = request.symptoms
 
     print(f"Received disease_id: {disease_id}, probability: {probability}, symptoms: {symptoms}")
 
@@ -355,23 +355,21 @@ async def add_disease(
         prediction_date=func.now()
     )
     db.add(new_user_disease)
-    await db.flush()  # Сохраняем запись, чтобы получить ID
+    await db.flush()
 
     # Если переданы симптомы, привязываем их к user_disease
     if symptoms:
         for symptom_id in symptoms:
-            # Проверяем существование симптома
             symptom_result = await db.execute(select(Symptom).where(Symptom.id == symptom_id))
             symptom = symptom_result.scalars().first()
             if not symptom:
                 raise HTTPException(status_code=404, detail=f"Симптом с ID {symptom_id} не найден")
 
-            # Добавляем связь между user_disease и симптомом
             await db.execute(
                 user_disease_symptoms.insert().values(
                     user_disease_id=new_user_disease.id,
                     symptom_id=symptom_id,
-                    weight=1.0  # Можно сделать вес настраиваемым
+                    weight=1.0
                 )
             )
 
