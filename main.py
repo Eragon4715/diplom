@@ -276,13 +276,14 @@ async def delete_note(
 from fastapi import HTTPException
 from sqlalchemy.orm import selectinload
 
+
 @app.get("/user/user_diseases", response_model=list[dict], tags=['Болезни'])
 async def get_user_diseases(db: AsyncSession = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
-        # Получаем все записи из user_diseases для текущего пользователя
+        # Получаем все записи из user_diseases для текущего пользователя с симптомами
         result = await db.execute(
             select(UserDisease)
-            .options(selectinload(UserDisease.disease))
+            .options(selectinload(UserDisease.disease), selectinload(UserDisease.symptoms))
             .where(UserDisease.user_id == current_user.id)
         )
         user_disease_records = result.scalars().all()
@@ -290,7 +291,7 @@ async def get_user_diseases(db: AsyncSession = Depends(get_db), current_user: Us
         if not user_disease_records:
             return []
 
-        # Формируем ответ
+        # Формируем ответ с симптомами
         diseases = [
             {
                 "id": record.disease.id,
@@ -298,7 +299,8 @@ async def get_user_diseases(db: AsyncSession = Depends(get_db), current_user: Us
                 "description": record.disease.description,
                 "probability": record.probability,
                 "prediction_date": record.prediction_date,
-                "created_at": record.created_at
+                "created_at": record.created_at,
+                "symptoms": [symptom.name for symptom in record.symptoms] if record.symptoms else []  # Добавляем симптомы
             }
             for record in user_disease_records
         ]
