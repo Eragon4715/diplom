@@ -99,7 +99,7 @@ async def register_user(user: UserCreate, session: AsyncSession = Depends(get_db
 
 
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 
 
 class UserUpdate(BaseModel):
@@ -311,13 +311,14 @@ async def get_user_diseases(db: AsyncSession = Depends(get_db), current_user: Us
         raise HTTPException(status_code=500, detail=str(e))
 
 
+from fastapi import HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+from src.db.models import User, Disease, UserDisease, Symptom, user_disease_symptoms
+
 class AddDiseaseRequest(BaseModel):
     probability: float
-
-from src.db.models import User, Disease, UserDisease  # Импортируем модель UserDisease
-
-class AddDiseaseRequest(BaseModel):
-    probability: float
+    symptoms: Optional[List[int]] = None  # Список ID симптомов
 
 @app.post("/add_disease/{disease_id}", tags=['Болезни'])
 async def add_disease(
@@ -327,7 +328,9 @@ async def add_disease(
     current_user: User = Depends(get_current_user)
 ):
     probability = request.probability
-    print(f"Received disease_id: {disease_id}, probability: {probability}")
+    symptoms = request.symptoms  # Получаем список симптомов из запроса
+
+    print(f"Received disease_id: {disease_id}, probability: {probability}, symptoms: {symptoms}")
 
     # Проверяем, существует ли болезнь
     result = await db.execute(select(Disease).where(Disease.id == disease_id))
@@ -350,6 +353,26 @@ async def add_disease(
         prediction_date=func.now()
     )
     db.add(new_user_disease)
+    await db.flush()  # Сохраняем запись, чтобы получить ID
+
+    # Если переданы симптомы, привязываем их к user_disease
+    if symptoms:
+        for symptom_id in symptoms:
+            # Проверяем существование симптома
+            symptom_result = await db.execute(select(Symptom).where(Symptom.id == symptom_id))
+            symptom = symptom_result.scalars().first()
+            if not symptom:
+                raise HTTPException(status_code=404, detail=f"Симптом с ID {symptom_id} не найден")
+
+            # Добавляем связь между user_disease и симптомом
+            await db.execute(
+                user_disease_symptoms.insert().values(
+                    user_disease_id=new_user_disease.id,
+                    symptom_id=symptom_id,
+                    weight=1.0  # Можно сделать вес настраиваемым
+                )
+            )
+
     await db.commit()
     await db.refresh(new_user_disease)
 
@@ -357,7 +380,8 @@ async def add_disease(
         "message": "Болезнь добавлена",
         "disease": disease.name,
         "probability": probability,
-        "prediction_date": new_user_disease.prediction_date
+        "prediction_date": new_user_disease.prediction_date,
+        "symptoms": symptoms if symptoms else []
     }
 @app.put("/disease/{disease_id}/update", response_model=dict, tags=['Болезни'])
 async def update_disease(

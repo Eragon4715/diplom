@@ -27,7 +27,16 @@ class UserDisease(Base):
 
     user = relationship("User", back_populates="user_diseases")
     disease = relationship("Disease", back_populates="user_diseases")
+    symptoms = relationship("Symptom", secondary="user_disease_symptoms", back_populates="user_diseases")
 
+    # Новая промежуточная таблица для связи user_diseases и симптомов
+user_disease_symptoms = Table(
+    "user_disease_symptoms",
+    Base.metadata,
+    Column("user_disease_id", Integer, ForeignKey("user_diseases.id", ondelete="CASCADE"), primary_key=True),
+    Column("symptom_id", Integer, ForeignKey("symptoms.id", ondelete="CASCADE"), primary_key=True),
+    Column("weight", Float, default=1.0, nullable=False)  # Вес симптома, по умолчанию 1.0
+)
 # Промежуточная таблица для связи "многие ко многим" между болезнями и симптомами
 disease_symptoms = Table(
     "disease_symptoms",
@@ -71,7 +80,7 @@ class Symptom(Base):
     name = Column(String, unique=True, index=True, nullable=False)
 
     diseases = relationship("Disease", secondary=disease_symptoms, back_populates="symptoms")
-
+    user_diseases = relationship("UserDisease", secondary=user_disease_symptoms, back_populates="symptoms")
 
 class Note(Base):
     __tablename__ = "notes"
@@ -167,7 +176,12 @@ class HealthMetric(Base):
 class HealthMetricCreate(BaseModel):
     name: str
     value: str
+from pydantic import BaseModel
+from typing import List, Optional
 
+class AddDiseaseRequest(BaseModel):
+    probability: float
+    symptoms: Optional[List[int]] = None  # Список ID симптомов (опционально)
 from datetime import datetime
 
 class HealthMetricResponse(BaseModel):
